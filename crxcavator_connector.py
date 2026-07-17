@@ -1,38 +1,34 @@
 # File: crxcavator_connector.py
-# Copyright (c) 2020 Splunk Inc.
+# Copyright (c) 2020-2026 Splunk Inc.
 #
 # Licensed under Apache 2.0 (https://www.apache.org/licenses/LICENSE-2.0.txt)
 #
 # Python 3 Compatibility imports
-from __future__ import print_function, unicode_literals
 
 # Phantom App imports
+import json
+import re
+import sys
+
 import phantom.app as phantom
-from phantom.base_connector import BaseConnector
+import requests
+from bs4 import BeautifulSoup, UnicodeDammit
 from phantom.action_result import ActionResult
+from phantom.base_connector import BaseConnector
 
 # Usage of the consts file is recommended
 from crxcavator_consts import *
-import requests
-import json
-from bs4 import BeautifulSoup
-import re
-from bs4 import UnicodeDammit
-import sys
 
 
 class RetVal(tuple):
-
     def __new__(cls, val1, val2=None):
         return tuple.__new__(RetVal, (val1, val2))
 
 
 class CrxcavatorConnector(BaseConnector):
-
     def __init__(self):
-
         # Call the BaseConnectors init first
-        super(CrxcavatorConnector, self).__init__()
+        super().__init__()
 
         self._state = None
 
@@ -50,14 +46,14 @@ class CrxcavatorConnector(BaseConnector):
 
         try:
             if input_str and self._python_version == 2:
-                input_str = UnicodeDammit(input_str).unicode_markup.encode('utf-8')
+                input_str = UnicodeDammit(input_str).unicode_markup.encode("utf-8")
         except:
             self.debug_print("Error occurred while handling python 2to3 compatibility for the input string")
 
         return input_str
 
     def _get_error_message_from_exception(self, e):
-        """ This method is used to get appropriate error message from the exception.
+        """This method is used to get appropriate error message from the exception.
         :param e: Exception object
         :return: error message
         """
@@ -85,9 +81,9 @@ class CrxcavatorConnector(BaseConnector):
 
         try:
             if error_code in ERR_CODE_MSG:
-                error_text = "Error Message: {0}".format(error_msg)
+                error_text = f"Error Message: {error_msg}"
             else:
-                error_text = "Error Code: {0}. Error Message: {1}".format(error_code, error_msg)
+                error_text = f"Error Code: {error_code}. Error Message: {error_msg}"
         except:
             self.debug_print("Error occurred while parsing error message")
             error_text = PARSE_ERR_MSG
@@ -105,7 +101,7 @@ class CrxcavatorConnector(BaseConnector):
             return data
         else:
             if prev_key is not None:
-                new_key = (prev_key[0:-1] if (prev_key.endswith('s') and len(prev_key) > 1) else prev_key)
+                new_key = prev_key[0:-1] if (prev_key.endswith("s") and len(prev_key) > 1) else prev_key
                 return {new_key: data}
             else:
                 return data
@@ -115,7 +111,7 @@ class CrxcavatorConnector(BaseConnector):
         for k, v in d.items():
             if isinstance(v, dict):
                 v = self.replace_dict(v)
-            new[k.replace('.', '_')] = v
+            new[k.replace(".", "_")] = v
         return new
 
     def _process_empty_response(self, response, action_result):
@@ -123,9 +119,8 @@ class CrxcavatorConnector(BaseConnector):
             return RetVal(phantom.APP_SUCCESS, {})
 
         return RetVal(
-            action_result.set_status(
-                phantom.APP_ERROR, "Status code: {0}. Empty response and no information in the header".format(response.status_code)
-            ), None
+            action_result.set_status(phantom.APP_ERROR, f"Status code: {response.status_code}. Empty response and no information in the header"),
+            None,
         )
 
     def _process_html_response(self, response, action_result):
@@ -138,15 +133,15 @@ class CrxcavatorConnector(BaseConnector):
             for element in soup(["script", "style", "footer", "nav"]):
                 element.extract()
             error_text = soup.text
-            split_lines = error_text.split('\n')
+            split_lines = error_text.split("\n")
             split_lines = [x.strip() for x in split_lines if x.strip()]
-            error_text = '\n'.join(split_lines)
+            error_text = "\n".join(split_lines)
         except:
             error_text = "Cannot parse error details"
 
-        message = "Status Code: {0}. Data from server:\n{1}\n".format(status_code, self._handle_py_ver_compat_for_input_str(error_text))
+        message = f"Status Code: {status_code}. Data from server:\n{self._handle_py_ver_compat_for_input_str(error_text)}\n"
 
-        message = message.replace('{', '{{').replace('}', '}}')
+        message = message.replace("{", "{{").replace("}", "}}")
         return RetVal(action_result.set_status(phantom.APP_ERROR, message), None)
 
     def _process_json_response(self, r, action_result):
@@ -155,34 +150,29 @@ class CrxcavatorConnector(BaseConnector):
             resp_json = r.json()
         except Exception as e:
             err = self._get_error_message_from_exception(e)
-            return RetVal(
-                action_result.set_status(
-                    phantom.APP_ERROR, "Unable to parse JSON response. Error: {0}".format(err)
-                ), None
-            )
+            return RetVal(action_result.set_status(phantom.APP_ERROR, f"Unable to parse JSON response. Error: {err}"), None)
 
         if 200 <= r.status_code < 399:
             return RetVal(phantom.APP_SUCCESS, resp_json)
 
-        message = "Error from server. Status Code: {0} Data from server: {1}".format(
-            r.status_code,
-            self._handle_py_ver_compat_for_input_str(r.text.replace('{', '{{').replace('}', '}}'))
+        message = "Error from server. Status Code: {} Data from server: {}".format(
+            r.status_code, self._handle_py_ver_compat_for_input_str(r.text.replace("{", "{{").replace("}", "}}"))
         )
 
         return RetVal(action_result.set_status(phantom.APP_ERROR, message), None)
 
     def _process_response(self, r, action_result):
         # store the r_text in debug data, it will get dumped in the logs if the action fails
-        if hasattr(action_result, 'add_debug_data'):
-            action_result.add_debug_data({'r_status_code': r.status_code})
-            action_result.add_debug_data({'r_text': r.text})
-            action_result.add_debug_data({'r_headers': r.headers})
+        if hasattr(action_result, "add_debug_data"):
+            action_result.add_debug_data({"r_status_code": r.status_code})
+            action_result.add_debug_data({"r_text": r.text})
+            action_result.add_debug_data({"r_headers": r.headers})
 
         # Process a json response
-        if 'json' in r.headers.get('Content-Type', ''):
+        if "json" in r.headers.get("Content-Type", ""):
             return self._process_json_response(r, action_result)
 
-        if 'html' in r.headers.get('Content-Type', ''):
+        if "html" in r.headers.get("Content-Type", ""):
             return self._process_html_response(r, action_result)
 
         # it's not content-type that is to be parsed, handle an empty response
@@ -190,9 +180,8 @@ class CrxcavatorConnector(BaseConnector):
             return self._process_empty_response(r, action_result)
 
         # everything else is actually an error at this point
-        message = "Can't process response from server. Status Code: {0} Data from server: {1}".format(
-            r.status_code,
-            self._handle_py_ver_compat_for_input_str(r.text.replace('{', '{{').replace('}', '}}'))
+        message = "Can't process response from server. Status Code: {} Data from server: {}".format(
+            r.status_code, self._handle_py_ver_compat_for_input_str(r.text.replace("{", "{{").replace("}", "}}"))
         )
 
         return RetVal(action_result.set_status(phantom.APP_ERROR, message), None)
@@ -207,27 +196,16 @@ class CrxcavatorConnector(BaseConnector):
         try:
             request_func = getattr(requests, method)
         except AttributeError:
-            return RetVal(
-                action_result.set_status(phantom.APP_ERROR, "Invalid method: {0}".format(method)),
-                resp_json
-            )
+            return RetVal(action_result.set_status(phantom.APP_ERROR, f"Invalid method: {method}"), resp_json)
 
         # Create a URL to connect to
         url = self._base_url + endpoint
 
         try:
-            r = request_func(
-                url,
-                verify=config.get('verify_server_cert', True),
-                **kwargs
-            )
+            r = request_func(url, verify=config.get("verify_server_cert", True), **kwargs)
         except Exception as e:
             err = self._get_error_message_from_exception(e)
-            return RetVal(
-                action_result.set_status(
-                    phantom.APP_ERROR, "Error Connecting to server. {0}".format(err)
-                ), resp_json
-            )
+            return RetVal(action_result.set_status(phantom.APP_ERROR, f"Error Connecting to server. {err}"), resp_json)
 
         return self._process_response(r, action_result)
 
@@ -236,7 +214,7 @@ class CrxcavatorConnector(BaseConnector):
 
         self.save_progress("Connecting to endpoint")
         # make rest call
-        ret_val, _ = self._make_rest_call('/', action_result, params=None, headers=None)
+        ret_val, _ = self._make_rest_call("/", action_result, params=None, headers=None)
         if phantom.is_fail(ret_val):
             self.save_progress("Test Connectivity Failed")
             return action_result.get_status()
@@ -246,120 +224,137 @@ class CrxcavatorConnector(BaseConnector):
 
     def major_minor_micro_patch(self, version):
         # pad the numbers
-        if not re.search(r'(\d+)\.', version):
-            version += '.0.0.0'
-        elif not re.search(r'(\d+)\.(\d+)\.', version):
-            version += '.0.0'
-        elif not re.search(r'(\d+)\.(\d+)\.(\d+)\.', version):
-            version += '.0'
-        major, minor, micro, patch = re.search(r'(\d+)\.(\d+)\.(\d+)\.(\d+)', version).groups()
+        if not re.search(r"(\d+)\.", version):
+            version += ".0.0.0"
+        elif not re.search(r"(\d+)\.(\d+)\.", version):
+            version += ".0.0"
+        elif not re.search(r"(\d+)\.(\d+)\.(\d+)\.", version):
+            version += ".0"
+        major, minor, micro, patch = re.search(r"(\d+)\.(\d+)\.(\d+)\.(\d+)", version).groups()
         return int(major), int(minor), int(micro), int(patch)
 
     def _handle_extension_metadata(self, param):
-        self.save_progress("In action handler for: {0}".format(self.get_action_identifier()))
+        self.save_progress(f"In action handler for: {self.get_action_identifier()}")
 
         action_result = self.add_action_result(ActionResult(dict(param)))
 
-        extension_id = param['extension_id']
+        extension_id = param["extension_id"]
         versions = []
         version_list = []
-        endpoint = '/metadata/{}'.format(extension_id)
+        endpoint = f"/metadata/{extension_id}"
 
         ret_val, response = self._make_rest_call(endpoint, action_result)
 
         if phantom.is_fail(ret_val):
             return action_result.get_status()
         if response is None:
-            return action_result.set_status(phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input")
-        endpoint = '/report/{}'.format(extension_id)
+            return action_result.set_status(
+                phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input"
+            )
+        endpoint = f"/report/{extension_id}"
 
         ret_val, response2 = self._make_rest_call(endpoint, action_result)
         if phantom.is_fail(ret_val):
             return action_result.get_status()
         if response2 is None:
-            return action_result.set_status(phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input")
+            return action_result.set_status(
+                phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input"
+            )
         try:
             for data in response2:
-                version_list.append({"version": data['version']})
-                versions.append(data['version'])
+                version_list.append({"version": data["version"]})
+                versions.append(data["version"])
                 latest = max(versions, key=self.major_minor_micro_patch)
             response.update({"versions": version_list})
             action_result.add_data(response)
-            name = response['name']
-            rating = response['rating']
-            short_description = response['short_description']
-            action_result.update_summary({"extension_id": extension_id, "name": name, "rating": rating,
-                                        "short_description": short_description, "total_versions": len(versions),
-                                        "latest_version": latest})
+            name = response["name"]
+            rating = response["rating"]
+            short_description = response["short_description"]
+            action_result.update_summary(
+                {
+                    "extension_id": extension_id,
+                    "name": name,
+                    "rating": rating,
+                    "short_description": short_description,
+                    "total_versions": len(versions),
+                    "latest_version": latest,
+                }
+            )
         except:
             return action_result.set_status(phantom.APP_ERROR, "Error occurred while processing response from the server")
 
         return action_result.set_status(phantom.APP_SUCCESS)
 
     def _handle_get_report(self, param):
-        self.save_progress("In action handler for: {0}".format(self.get_action_identifier()))
+        self.save_progress(f"In action handler for: {self.get_action_identifier()}")
 
         action_result = self.add_action_result(ActionResult(dict(param)))
 
-        extension_id = param['extension_id']
-        version = param.get('version')
+        extension_id = param["extension_id"]
+        version = param.get("version")
         if version:
-            endpoint = '/report/{}/{}'.format(extension_id, version)
+            endpoint = f"/report/{extension_id}/{version}"
         else:
             # Get latest version
-            endpoint = '/report/{}'.format(extension_id)
+            endpoint = f"/report/{extension_id}"
             ret_val, response = self._make_rest_call(endpoint, action_result)
             if response is None:
-                return action_result.set_status(phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input")
+                return action_result.set_status(
+                    phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input"
+                )
             versions = []
             try:
                 for data in response:
-                    versions.append(data['version'])
+                    versions.append(data["version"])
             except Exception as e:
                 err = self._get_error_message_from_exception(e)
-                return action_result.set_status(phantom.APP_ERROR, "Error occurred while processing response for version from the server. {}".format(err))
+                return action_result.set_status(
+                    phantom.APP_ERROR, f"Error occurred while processing response for version from the server. {err}"
+                )
 
             latest = max(versions, key=self.major_minor_micro_patch)
-            endpoint = '/report/{}/{}'.format(extension_id, latest)
+            endpoint = f"/report/{extension_id}/{latest}"
 
         ret_val, response = self._make_rest_call(endpoint, action_result)
 
         if phantom.is_fail(ret_val):
             return action_result.get_status()
         if response is None:
-            return action_result.set_status(phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input")
+            return action_result.set_status(
+                phantom.APP_ERROR, "Received unexpected response from the server. Please try again by providing a valid input"
+            )
 
         try:
             # Scrub dots from field names
             response = self.replace_dict(response)
-            data = response['data']
-            data.update({"extension_id": response['extension_id']})
-            data.update({"version": response['version']})
+            data = response["data"]
+            data.update({"extension_id": response["extension_id"]})
+            data.update({"version": response["version"]})
             action_result.add_data(data)
-            total_risk = data['risk']['total']
-            action_result.update_summary({"extension_id": extension_id, "version": response['version'], "total_risk": total_risk})
+            total_risk = data["risk"]["total"]
+            action_result.update_summary({"extension_id": extension_id, "version": response["version"], "total_risk": total_risk})
         except:
             return action_result.set_status(phantom.APP_ERROR, "Error occurred while processing response from the server for given extension ID")
 
         return action_result.set_status(phantom.APP_SUCCESS)
 
     def _handle_submit_extension(self, param):
-        self.save_progress("In action handler for: {0}".format(self.get_action_identifier()))
+        self.save_progress(f"In action handler for: {self.get_action_identifier()}")
 
         action_result = self.add_action_result(ActionResult(dict(param)))
 
-        extension_id = param['extension_id']
+        extension_id = param["extension_id"]
         data = json.dumps({"extension_id": extension_id})
 
-        ret_val, response = self._make_rest_call('/submit', action_result, data=data, method='post')
+        ret_val, response = self._make_rest_call("/submit", action_result, data=data, method="post")
         if phantom.is_fail(ret_val):
             return action_result.get_status()
-        elif response.get('error'):
-            return action_result.set_status(phantom.APP_ERROR, response['error'])
+        elif response.get("error"):
+            return action_result.set_status(phantom.APP_ERROR, response["error"])
 
         action_result.add_data(response)
-        version = response.get('version')
-        code = response.get('code')
+        version = response.get("version")
+        code = response.get("code")
 
         action_result.update_summary({"code": code, "extension_id": extension_id, "version": version})
         msg = response.get("message", "Successfully submitted extension")
@@ -373,13 +368,13 @@ class CrxcavatorConnector(BaseConnector):
 
         self.debug_print("action_id", self.get_action_identifier())
 
-        if action_id == 'test_connectivity':
+        if action_id == "test_connectivity":
             ret_val = self._handle_test_connectivity(param)
-        elif action_id == 'extension_metadata':
+        elif action_id == "extension_metadata":
             ret_val = self._handle_extension_metadata(param)
-        elif action_id == 'get_report':
+        elif action_id == "get_report":
             ret_val = self._handle_get_report(param)
-        elif action_id == 'submit_extension':
+        elif action_id == "submit_extension":
             ret_val = self._handle_submit_extension(param)
 
         return ret_val
@@ -392,7 +387,7 @@ class CrxcavatorConnector(BaseConnector):
         # get the asset config
         config = self.get_config()
 
-        self._base_url = config.get('base_url').strip("/")
+        self._base_url = config.get("base_url").strip("/")
         # Fetching the Python major version
         try:
             self._python_version = int(sys.version_info[0])
@@ -408,16 +403,17 @@ class CrxcavatorConnector(BaseConnector):
 
 
 def main():
-    import pudb
     import argparse
+
+    import pudb
 
     pudb.set_trace()
 
     argparser = argparse.ArgumentParser()
 
-    argparser.add_argument('input_test_json', help='Input Test JSON file')
-    argparser.add_argument('-u', '--username', help='username', required=False)
-    argparser.add_argument('-p', '--password', help='password', required=False)
+    argparser.add_argument("input_test_json", help="Input Test JSON file")
+    argparser.add_argument("-u", "--username", help="username", required=False)
+    argparser.add_argument("-p", "--password", help="password", required=False)
 
     args = argparser.parse_args()
     session_id = None
@@ -426,31 +422,31 @@ def main():
     password = args.password
 
     if username is not None and password is None:
-
         # User specified a username but not a password, so ask
         import getpass
+
         password = getpass.getpass("Password: ")
 
     if username and password:
         try:
-            login_url = CrxcavatorConnector._get_phantom_base_url() + '/login'
+            login_url = CrxcavatorConnector._get_phantom_base_url() + "/login"
 
             print("Accessing the Login page")
             r = requests.get(login_url, verify=False)
-            csrftoken = r.cookies['csrftoken']
+            csrftoken = r.cookies["csrftoken"]
 
             data = dict()
-            data['username'] = username
-            data['password'] = password
-            data['csrfmiddlewaretoken'] = csrftoken
+            data["username"] = username
+            data["password"] = password
+            data["csrfmiddlewaretoken"] = csrftoken
 
             headers = dict()
-            headers['Cookie'] = 'csrftoken=' + csrftoken
-            headers['Referer'] = login_url
+            headers["Cookie"] = "csrftoken=" + csrftoken
+            headers["Referer"] = login_url
 
             print("Logging into Platform to get the session id")
             r2 = requests.post(login_url, verify=False, data=data, headers=headers)
-            session_id = r2.cookies['sessionid']
+            session_id = r2.cookies["sessionid"]
         except Exception as e:
             print("Unable to get session id from the platform. Error: " + str(e))
             exit(1)
@@ -464,8 +460,8 @@ def main():
         connector.print_progress_message = True
 
         if session_id is not None:
-            in_json['user_session_token'] = session_id
-            connector._set_csrf_info(csrftoken, headers['Referer'])
+            in_json["user_session_token"] = session_id
+            connector._set_csrf_info(csrftoken, headers["Referer"])
 
         ret_val = connector._handle_action(json.dumps(in_json), None)
         print(json.dumps(json.loads(ret_val), indent=4))
@@ -473,5 +469,5 @@ def main():
     exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
