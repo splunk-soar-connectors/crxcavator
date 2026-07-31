@@ -1,7 +1,7 @@
 # CRXcavator
 
 Publisher: Splunk Community <br>
-Connector Version: 1.0.0 <br>
+Connector Version: 2.0.0 <br>
 Product Vendor: DUO Security <br>
 Product Name: CRXcavator <br>
 Minimum Product Version: 4.8.24304
