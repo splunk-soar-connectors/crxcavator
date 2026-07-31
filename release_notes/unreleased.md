@@ -1,0 +1,3 @@
+**Unreleased**
+
+* Verify TLS certificates by default for CRXcavator API requests.

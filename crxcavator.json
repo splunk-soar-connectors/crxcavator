@@ -7,10 +7,10 @@
     "logo": "logo_crxcavator.svg",
     "logo_dark": "logo_crxcavator_dark.svg",
     "product_name": "CRXcavator",
-    "python_version": "3",
+    "python_version": "3.9, 3.13",
     "product_version_regex": ".*",
     "publisher": "Splunk Community",
-    "license": "Copyright (c) 2020 Splunk Inc.",
+    "license": "Copyright (c) 2020-2026 Splunk Inc.",
     "app_version": "1.0.0",
     "utctime_updated": "2020-06-05T05:11:29.309490Z",
     "package_name": "phantom_crxcavator",
@@ -18,6 +18,13 @@
     "min_phantom_version": "4.8.24304",
     "app_wizard_version": "1.0.0",
     "configuration": {
+        "verify_server_cert": {
+            "description": "Verify server certificate",
+            "data_type": "boolean",
+            "required": false,
+            "default": true,
+            "order": 1
+        },
         "base_url": {
             "description": "CRXcavator API endpoint",
             "data_type": "string",
